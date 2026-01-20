@@ -30,7 +30,6 @@
             font-family: 'Permanent Marker', cursive;
         }
         
-        /* Screen Overlays */
         .screen-overlay {
             position: absolute;
             inset: 0;
@@ -90,7 +89,6 @@
             transition: width 0.3s ease-out;
         }
         
-        /* Stamina Bar for Anti-Spam */
         .stamina-container {
             width: 60%;
             height: 8px;
@@ -201,34 +199,49 @@
             transition: 0.2s;
             transform: skewX(-5deg);
         }
-        .upgrade-card:hover {
-            background: #222;
-            border-color: #fff;
-            transform: scale(1.05) skewX(-5deg);
+
+        #controls-instruction {
+            margin-top: 30px;
+            background: rgba(0,0,0,0.6);
+            padding: 15px 30px;
+            border: 2px solid #555;
+            border-radius: 4px;
+            transform: skewX(-5deg);
+        }
+        .key-hint {
+            color: #ffcc00;
+            font-weight: bold;
+            margin-right: 5px;
         }
     </style>
 </head>
 <body>
 
-    <!-- หน้าจอเริ่มต้น -->
     <div id="start-screen" class="screen-overlay">
         <div class="city-silhouette"></div>
         <div class="relative mb-6">
             <h1 class="text-8xl arcade-font text-white italic" style="text-shadow: 10px 10px 0 #ff0000;">PARRY MASTER</h1>
-            <div class="absolute -top-6 -right-10 bg-red-600 text-white px-4 py-1 font-black transform rotate-12 text-xl border-2 border-white">ANTI-SPAM ACTIVE</div>
         </div>
-        <p class="text-2xl text-yellow-400 mb-12 tracking-[0.3em] arcade-font uppercase animate-pulse">Third Strike Training</p>
+        <p class="text-2xl text-yellow-400 mb-8 tracking-[0.3em] arcade-font uppercase animate-pulse">Retro Arcade Fighter</p>
+        
         <button onclick="startGame()" class="btn-arcade arcade-font italic">START GAME</button>
+        
+        <div id="controls-instruction" class="text-lg">
+            <p class="mb-2 text-gray-400 font-bold uppercase tracking-widest text-sm">How to Play</p>
+            <div class="flex gap-6 text-white arcade-font">
+                <div><span class="key-hint">SPACE</span> : PARRY / DEFEND</div>
+                <div><span class="key-hint">X</span> : HEAL (GOURD)</div>
+            </div>
+            <p class="mt-2 text-xs text-blue-400 italic italic">Tip: Parry enemy attacks to break their guard!</p>
+        </div>
     </div>
 
-    <!-- หน้าจอจบเกม -->
     <div id="gameover-screen" class="screen-overlay" style="display: none;">
-        <h2 class="text-9xl arcade-font text-red-600 mb-4 italic" style="text-shadow: 10px 10px 0 #fff;">GAME OVER</h2>
+        <h2 class="text-9xl arcade-font text-red-600 mb-4 italic" style="text-shadow: 10px 10px 0 #fff;">K.O.</h2>
         <p id="final-level" class="text-2xl text-white mb-12 arcade-font italic">ROUND REACHED: 1</p>
-        <button onclick="resetGame()" class="btn-arcade arcade-font italic">TRY AGAIN</button>
+        <button onclick="resetGame()" class="btn-arcade arcade-font italic">CONTINUE?</button>
     </div>
 
-    <!-- หน้าจอเลือกบัพ -->
     <div id="upgrade-overlay" class="screen-overlay" style="display: none;">
         <h2 class="text-6xl font-black text-white mb-2 arcade-font italic">BONUS STAGE</h2>
         <p class="text-yellow-400 mb-10 tracking-widest uppercase text-xl font-bold">SELECT UPGRADE</p>
@@ -244,7 +257,6 @@
                 <div id="player-hp-val" class="hp-value">100 / 100</div>
                 <div id="player-hp-fill" class="health-fill"></div>
             </div>
-            <!-- Stamina Bar -->
             <div class="stamina-container">
                 <div id="player-stamina-fill" class="stamina-fill"></div>
             </div>
@@ -273,7 +285,7 @@
             HEAL (X) : <span id="gourd-count" class="text-yellow-400">3</span>
         </div>
         <div id="giveup-btn" class="bg-gray-800 border-2 border-white px-6 py-2 transform skew-x-[10deg] cursor-pointer hover:bg-red-700 arcade-font">
-            GIVE UP
+            QUIT
         </div>
     </div>
 
@@ -302,36 +314,128 @@
     canvas.width = 1000;
     canvas.height = 500;
 
+    // --- SF AUDIO ENGINE ---
+    let audioCtx = null;
+    let bgmInterval = null;
+
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+    }
+
+    function playSound(freq, type, duration, vol = 0.1) {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    }
+
+    function startBGM() {
+        if (!audioCtx) return;
+        stopBGM();
+        startSyntheticBGM();
+    }
+
+    function startSyntheticBGM() {
+        const tempo = 130; 
+        const beat = 60 / tempo;
+        let step = 0;
+
+        const bassPattern = [110, 110, 110, 130, 110, 110, 146, 130];
+        const melodyPattern = [220, 0, 220, 246, 261, 0, 293, 261, 246, 0, 220, 196, 220, 0, 0, 0];
+
+        const playNote = (freq, vol, type, dur, time) => {
+            if (freq === 0) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, time);
+            g.gain.setValueAtTime(vol, time);
+            g.gain.exponentialRampToValueAtTime(0.001, time + dur);
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start(time);
+            osc.stop(time + dur);
+        };
+
+        const tick = () => {
+            if (gameState !== 'PLAYING') return;
+            const now = audioCtx.currentTime;
+            playNote(bassPattern[step % 8], 0.04, 'triangle', beat * 0.8, now);
+            if (step % 4 === 0) playNote(60, 0.1, 'sine', 0.1, now);
+            if (step % 8 === 4) {
+                const noise = audioCtx.createBufferSource();
+                const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for(let i=0; i<data.length; i++) data[i] = Math.random() * 2 - 1;
+                noise.buffer = buffer;
+                const g = audioCtx.createGain();
+                g.gain.setValueAtTime(0.05, now);
+                g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                noise.connect(g);
+                g.connect(audioCtx.destination);
+                noise.start(now);
+            }
+            const mFreq = melodyPattern[step % 16];
+            if (mFreq > 0) playNote(mFreq, 0.03, 'square', beat * 1.5, now);
+            step++;
+        };
+
+        bgmInterval = setInterval(tick, beat * 1000);
+    }
+
+    function stopBGM() {
+        if (bgmInterval) clearInterval(bgmInterval);
+    }
+
+    const sfx = {
+        parry: () => playSound(880, 'square', 0.1, 0.2),
+        hit: () => playSound(150, 'sawtooth', 0.2, 0.2),
+        deathblow: () => {
+            playSound(100, 'sawtooth', 0.5, 0.3);
+            playSound(200, 'square', 0.3, 0.2);
+        },
+        heal: () => {
+            playSound(440, 'sine', 0.1, 0.1);
+            setTimeout(() => playSound(660, 'sine', 0.1, 0.1), 50);
+            setTimeout(() => playSound(880, 'sine', 0.2, 0.1), 100);
+        },
+        miss: () => playSound(80, 'sine', 0.1, 0.2)
+    };
+
+    // --- GAME STATE & LOGIC ---
     let gameState = 'START'; 
     let currentLevel = 1;
-    let stats = { 
-        maxHp: 100, 
-        hp: 100, 
-        posturePower: 25, 
-        maxGourds: 3, 
-        gourds: 3, 
-        defense: 0,
-        stamina: 100
-    };
+    let stats = { maxHp: 100, hp: 100, posturePower: 25, maxGourds: 3, gourds: 3, defense: 0, stamina: 100 };
     let enemy = { maxHp: 100, hp: 100, guard: 0, state: 'idle', timer: 80, winding: 80, damage: 10 };
 
     let particles = [];
     let damageTexts = [];
     let shake = 0;
-
-    // 60 FPS Control
     let lastTime = 0;
     const fps = 60;
     const interval = 1000 / fps;
 
     const BUFFS = [
         { title: "POWER UP", desc: "Guard Damage +10", color: "#00ffff", apply: () => stats.posturePower += 10 },
-        { title: "MAX HP UP", desc: "Max HP Capacity +50", color: "#ffcc00", apply: () => { stats.maxHp += 50; } },
-        { title: "RESOURCES", desc: "Heal Item Cap +1", color: "#3b82f6", apply: () => { stats.maxGourds += 1; } },
-        { title: "DEFENSE", desc: "Damage Taken -5", color: "#94a3b8", apply: () => stats.defense += 5 }
+        { title: "MAX HP UP", desc: "Max HP +50", color: "#ffcc00", apply: () => { stats.maxHp += 50; stats.hp = stats.maxHp; } },
+        { title: "RESOURCES", desc: "Heal Item +1", color: "#3b82f6", apply: () => { stats.maxGourds += 1; } },
+        { title: "DEFENSE", desc: "Defense +5", color: "#94a3b8", apply: () => stats.defense += 5 }
     ];
 
     function startGame() {
+        initAudio();
         startScreen.style.display = 'none';
         gameoverScreen.style.display = 'none';
         upgradeOverlay.style.display = 'none';
@@ -340,6 +444,7 @@
         resetStats();
         setupLevel(1);
         gameState = 'PLAYING';
+        startBGM();
         announce("FIGHT!");
     }
 
@@ -348,22 +453,20 @@
     function resetStats() {
         currentLevel = 1;
         stats = { maxHp: 100, hp: 100, posturePower: 25, maxGourds: 3, gourds: 3, defense: 0, stamina: 100 };
-        particles = [];
-        damageTexts = [];
     }
 
     function setupLevel(lvl) {
         currentLevel = lvl;
         stats.hp = stats.maxHp; 
         stats.stamina = 100;
-        stats.gourds = stats.maxGourds; // รีจำนวนยาเพิ่มเลือดใหม่ทุกเลเวลตามที่ขอ
+        stats.gourds = stats.maxGourds; 
         
         enemy.maxHp = 100 + (lvl * 35);
         enemy.hp = enemy.maxHp;
         enemy.guard = 0;
         enemy.timer = 100;
-        enemy.winding = Math.max(30, 130 - (lvl * 10)); 
-        enemy.damage = 10 + (lvl * 4); 
+        enemy.winding = Math.max(25, 120 - (lvl * 8)); 
+        enemy.damage = 10 + (lvl * 5); 
         enemy.state = 'idle';
         document.getElementById('level-display').innerText = `ROUND ${lvl}`;
         updateUI();
@@ -377,20 +480,19 @@
 
     function showUpgradeScreen() {
         gameState = 'UPGRADE';
+        stopBGM();
         upgradeOverlay.style.display = 'flex';
         upgradeOptions.innerHTML = '';
         const selected = [...BUFFS].sort(() => 0.5 - Math.random()).slice(0, 3);
         selected.forEach(buff => {
             const card = document.createElement('div');
             card.className = 'upgrade-card';
-            card.innerHTML = `
-                <h3 class="text-3xl arcade-font mb-2" style="color:${buff.color}">${buff.title}</h3>
-                <p class="text-sm text-gray-400 font-bold">${buff.desc}</p>
-            `;
+            card.innerHTML = `<h3 class="text-3xl arcade-font mb-2" style="color:${buff.color}">${buff.title}</h3><p class="text-sm text-gray-400 font-bold">${buff.desc}</p>`;
             card.onclick = () => {
                 buff.apply();
                 upgradeOverlay.style.display = 'none';
                 gameState = 'PLAYING';
+                startBGM();
                 setupLevel(currentLevel + 1);
                 announce(`ROUND ${currentLevel}`);
             };
@@ -400,58 +502,45 @@
 
     function handleParry() {
         if (gameState !== 'PLAYING') return;
-
         if (enemy.state === 'attacking') {
             enemy.state = 'parried';
             enemy.timer = 40; 
-            
-            // Parry Strength based on Stamina
-            let actualPower = stats.posturePower;
-            if (stats.stamina < 20) actualPower = Math.ceil(stats.posturePower * 0.5);
-            
+            sfx.parry();
+            let actualPower = stats.stamina < 20 ? Math.ceil(stats.posturePower * 0.5) : stats.posturePower;
             enemy.guard += actualPower;
             shake = 25;
             createParticles(500, 250, '#fff', 35);
-            createDamageText(500, 150, stats.stamina < 20 ? "WEAK!" : "PERFECT!", "#00ffff", stats.stamina >= 20);
-            
-            // Recover some stamina on success
-            stats.stamina = Math.min(100, stats.stamina + 5);
-
+            createDamageText(500, 150, stats.stamina < 20 ? "WEAK!" : "PARRY!", "#00ffff", true);
+            stats.stamina = Math.min(100, stats.stamina + 10);
             if (enemy.guard >= 100) deathBlow();
         } else {
-            // SPAM MISS PENALTY (ปรับตามคำขอเดิม)
+            sfx.miss();
             createDamageText(500, 150, "MISS!", "#ff0000", false);
             shake = 8;
-            
-            // 1. Reduce Player Stamina
-            stats.stamina -= 20;
-            if (stats.stamina < 0) stats.stamina = 0;
-
-            // 2. ENEMY GUARD RECOVERS ON SPAM (Anti-Spam Logic)
-            const recoveryAmount = 10 + (currentLevel * 2);
-            if (enemy.guard > 0) {
-                enemy.guard = Math.max(0, enemy.guard - recoveryAmount);
-                createDamageText(750, 200, "RECOVERED", "#ff5555", false);
-            }
+            stats.stamina = Math.max(0, stats.stamina - 20);
         }
     }
 
     function deathBlow() {
         enemy.guard = 0;
+        sfx.deathblow();
         const dmg = Math.ceil(enemy.maxHp * 0.55);
         enemy.hp -= dmg;
         shake = 60;
         createParticles(750, 300, '#ff0000', 60);
-        createDamageText(750, 180, `-${dmg}`, "#ff0000", true);
+        
+        // แก้ไขสีตัวเลข HP ลดของศัตรูให้เป็นสีแดงสว่าง (#ff0000)
+        createDamageText(750, 180, `-${dmg}`, "#ff0000", true); 
+        
         if (enemy.hp <= 5) {
             enemy.hp = 0;
-            announce("VICTORY!", 2000);
-            createDamageText(250, 200, "HP & ITEMS REFILLED!", "#00ff00", true);
+            announce("WINNER!", 2000);
             setTimeout(showUpgradeScreen, 1500);
         }
     }
 
     function takeHit() {
+        sfx.hit();
         const dmg = Math.max(5, enemy.damage - stats.defense);
         stats.hp -= dmg;
         shake = 40;
@@ -459,16 +548,13 @@
         createParticles(250, 345, '#ff0000', 25);
         if (stats.hp <= 0) {
             stats.hp = 0;
-            triggerGameOver();
+            gameState = 'GAMEOVER';
+            stopBGM();
+            document.getElementById('final-level').innerText = `ROUND REACHED: ${currentLevel}`;
+            gameoverScreen.style.display = 'flex';
+            hud.style.display = 'none';
+            gameControls.style.display = 'none';
         }
-    }
-
-    function triggerGameOver() {
-        gameState = 'GAMEOVER';
-        document.getElementById('final-level').innerText = `ROUND REACHED: ${currentLevel}`;
-        gameoverScreen.style.display = 'flex';
-        hud.style.display = 'none';
-        gameControls.style.display = 'none';
     }
 
     function createParticles(x, y, color, count) {
@@ -484,29 +570,18 @@
     function updateUI() {
         playerHpFill.style.width = (stats.hp / stats.maxHp * 100) + '%';
         playerHpVal.innerText = `${Math.ceil(stats.hp)} / ${stats.maxHp}`;
-        
-        // Update Stamina Bar
         playerStaminaFill.style.width = stats.stamina + '%';
         playerStaminaFill.style.backgroundColor = stats.stamina < 20 ? '#ff3333' : '#ffffff';
-
         enemyHpFill.style.width = (enemy.hp / enemy.maxHp * 100) + '%';
         enemyHpVal.innerText = `${Math.ceil(enemy.hp)} / ${enemy.maxHp}`;
         enemyGuardFill.style.width = enemy.guard + '%';
         gourdCountEl.innerText = stats.gourds;
-        
-        const currentPower = stats.stamina < 20 ? Math.ceil(stats.posturePower * 0.5) : stats.posturePower;
-        pStatsEl.innerText = `POWER: ${currentPower} | DEFENSE: ${stats.defense}`;
+        pStatsEl.innerText = `POWER: ${stats.posturePower} | DEFENSE: ${stats.defense}`;
     }
 
     function updateLogic() {
         if (gameState !== 'PLAYING') return;
-
-        // Auto recover stamina
-        if (stats.stamina < 100) {
-            stats.stamina += 0.3;
-            if (stats.stamina > 100) stats.stamina = 100;
-        }
-
+        stats.stamina = Math.min(100, stats.stamina + 0.3);
         if (enemy.state === 'idle') {
             enemy.timer--;
             if (enemy.timer <= 0) { enemy.state = 'winding'; enemy.timer = enemy.winding; }
@@ -520,7 +595,6 @@
             enemy.timer--;
             if (enemy.timer <= 0) { enemy.state = 'idle'; enemy.timer = 40; }
         }
-
         particles.forEach((p, i) => { p.x += p.vx; p.y += p.vy; p.life--; if (p.life <= 0) particles.splice(i, 1); });
         damageTexts.forEach((dt, i) => { dt.y += dt.vy; dt.life--; if (dt.life <= 0) damageTexts.splice(i, 1); });
         if (shake > 0) shake *= 0.85;
@@ -531,45 +605,27 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.save();
         if (shake > 0.5) ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
-
-        // Floor
-        ctx.fillStyle = '#111';
-        ctx.fillRect(0, 420, canvas.width, 80);
+        ctx.fillStyle = '#111'; ctx.fillRect(0, 420, canvas.width, 80);
         ctx.strokeStyle = '#333'; ctx.lineWidth = 4;
         for(let i=0; i<canvas.width; i+=80) { ctx.beginPath(); ctx.moveTo(i, 420); ctx.lineTo(i-40, 500); ctx.stroke(); }
 
-        if (gameState === 'PLAYING' || gameState === 'UPGRADE') {
-            // Player
+        if (gameState === 'PLAYING') {
             ctx.fillStyle = stats.stamina < 20 && Date.now() % 200 < 100 ? '#ff8888' : '#fff'; 
             ctx.fillRect(220, 270, 70, 150); 
             ctx.fillStyle = '#ff0000'; ctx.fillRect(220, 285, 70, 12); 
-            ctx.fillStyle = '#333'; ctx.fillRect(220, 360, 70, 8); 
-
-            // Enemy
+            
             let eColor = '#cc0000';
             if (enemy.state === 'winding') eColor = '#ffff00';
             if (enemy.state === 'attacking') eColor = '#ffffff';
             if (enemy.state === 'parried') eColor = '#444444';
-            
             ctx.fillStyle = eColor; ctx.fillRect(710, 250, 80, 170); 
-            ctx.fillStyle = '#000'; ctx.fillRect(710, 250, 80, 25); 
-            ctx.fillStyle = '#555'; ctx.fillRect(710, 280, 80, 40); 
-
-            // Countdown
-            if (currentLevel <= 5 && enemy.state === 'winding') {
+            
+            if (enemy.state === 'winding') {
                 ctx.save();
-                ctx.shadowBlur = 10; ctx.shadowColor = 'black';
-                ctx.textAlign = 'center';
-                const ratio = enemy.timer / enemy.winding;
-                let displayVal = ratio > 0.6 ? "3" : (ratio > 0.3 ? "2" : "1");
-                let color = ratio > 0.6 ? "#00ff00" : (ratio > 0.3 ? "#ffff00" : "#ff6600");
-                ctx.fillStyle = color;
-                ctx.font = 'italic 900 80px Permanent Marker';
-                ctx.fillText(displayVal, 750, 230);
-                ctx.beginPath();
-                ctx.strokeStyle = color; ctx.lineWidth = 5;
-                ctx.arc(750, 205, 45 * ratio + 10, 0, Math.PI * 2);
-                ctx.stroke();
+                ctx.textAlign = 'center'; ctx.fillStyle = '#ffcc00';
+                ctx.font = 'bold 80px Permanent Marker';
+                const count = Math.ceil(enemy.timer / (enemy.winding/3));
+                ctx.fillText(count, 750, 220);
                 ctx.restore();
             }
         }
@@ -586,7 +642,6 @@
             ctx.fillText(dt.text, dt.x, dt.y);
             ctx.restore();
         });
-
         ctx.restore();
     }
 
@@ -606,21 +661,16 @@
         if (gameState !== 'PLAYING') return;
         if (e.code === 'Space') handleParry();
         if (e.code === 'KeyX' && stats.gourds > 0 && stats.hp < stats.maxHp) {
-            stats.gourds--; 
-            const healAmt = Math.ceil(stats.maxHp * 0.35);
+            sfx.heal(); stats.gourds--; 
+            const healAmt = Math.ceil(stats.maxHp * 0.4);
             stats.hp = Math.min(stats.maxHp, stats.hp + healAmt);
             createParticles(255, 345, '#00ff00', 30);
             createDamageText(250, 220, `+${healAmt}`, "#00ff00");
         }
     });
 
-    document.getElementById('gourd-btn').onclick = () => {
-        if (gameState === 'PLAYING') window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyX' }));
-    };
-
-    document.getElementById('giveup-btn').onclick = () => {
-        if (gameState === 'PLAYING') triggerGameOver();
-    };
+    document.getElementById('gourd-btn').onclick = () => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyX' }));
+    document.getElementById('giveup-btn').onclick = () => { if (gameState === 'PLAYING') { gameState = 'GAMEOVER'; stopBGM(); gameoverScreen.style.display = 'flex'; } };
 
     requestAnimationFrame(gameLoop);
 </script>
