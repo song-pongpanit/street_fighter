@@ -465,7 +465,7 @@
         enemy.hp = enemy.maxHp;
         enemy.guard = 0;
         enemy.timer = 100;
-        enemy.winding = Math.max(25, 120 - (lvl * 8)); 
+        enemy.winding = Math.max(30, 120 - (lvl * 8)); 
         enemy.damage = 10 + (lvl * 5); 
         enemy.state = 'idle';
         document.getElementById('level-display').innerText = `ROUND ${lvl}`;
@@ -529,7 +529,7 @@
         shake = 60;
         createParticles(750, 300, '#ff0000', 60);
         
-        // แก้ไขสีตัวเลข HP ลดของศัตรูให้เป็นสีแดงสว่าง (#ff0000)
+        // Damage number for enemy set to bright red (#ff0000)
         createDamageText(750, 180, `-${dmg}`, "#ff0000", true); 
         
         if (enemy.hp <= 5) {
@@ -610,22 +610,61 @@
         for(let i=0; i<canvas.width; i+=80) { ctx.beginPath(); ctx.moveTo(i, 420); ctx.lineTo(i-40, 500); ctx.stroke(); }
 
         if (gameState === 'PLAYING') {
+            // Player Visual
             ctx.fillStyle = stats.stamina < 20 && Date.now() % 200 < 100 ? '#ff8888' : '#fff'; 
             ctx.fillRect(220, 270, 70, 150); 
             ctx.fillStyle = '#ff0000'; ctx.fillRect(220, 285, 70, 12); 
             
+            // Enemy Visual
             let eColor = '#cc0000';
             if (enemy.state === 'winding') eColor = '#ffff00';
             if (enemy.state === 'attacking') eColor = '#ffffff';
             if (enemy.state === 'parried') eColor = '#444444';
             ctx.fillStyle = eColor; ctx.fillRect(710, 250, 80, 170); 
             
+            // Indicator logic
             if (enemy.state === 'winding') {
+                const centerX = 750;
+                const centerY = 190;
+                
+                // Ring Indicator
+                const progress = enemy.timer / enemy.winding; // 1 to 0
+                const baseSize = 40;
+                const ringRadius = baseSize + (progress * 100);
+                
                 ctx.save();
-                ctx.textAlign = 'center'; ctx.fillStyle = '#ffcc00';
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
+                ctx.lineWidth = 6;
+                ctx.strokeStyle = progress < 0.2 ? '#ff0000' : '#ffff00';
+                ctx.globalAlpha = 0.6;
+                ctx.stroke();
+                
+                // Static outer circle for reference
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, baseSize, 0, Math.PI * 2);
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.restore();
+
+                // Number Countdown
+                ctx.save();
+                ctx.textAlign = 'center'; ctx.fillStyle = progress < 0.2 ? '#ff0000' : '#ffcc00';
                 ctx.font = 'bold 80px Permanent Marker';
                 const count = Math.ceil(enemy.timer / (enemy.winding/3));
-                ctx.fillText(count, 750, 220);
+                ctx.fillText(count, centerX, centerY + 30);
+                ctx.restore();
+            }
+            
+            // Attack flash
+            if (enemy.state === 'attacking') {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(750, 190, 50, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = 0.8;
+                ctx.fill();
                 ctx.restore();
             }
         }
